@@ -4,6 +4,8 @@
 
 Control Hisense Google TV devices (TVs and laser projectors) via ADB and AirPlay in Home Assistant.
 
+> **Status:** Early access (0.1.x). Tested on the author's own setup; expect rough edges and occasional breaking changes until 1.0. Please file issues on GitHub if anything is broken.
+
 > **Tested on:** Hisense L9Q Laser TV. Should work on any Hisense Google TV device (L5G, PX1, PX2, PX3, U8N, etc.) since the ADB commands are common across the Hisense Google TV platform. If you test on another model, please [open an issue](https://github.com/ltomes/ha-hisense-tv/issues) to confirm compatibility.
 
 ```mermaid
@@ -48,14 +50,15 @@ graph TD
 
 ### HACS (recommended)
 
-1. Open HACS > Integrations > three-dot menu > Custom repositories
-2. Add `https://github.com/ltomes/ha-hisense-tv` as an Integration
-3. Search for "Hisense TV" and install
-4. Restart Home Assistant
+1. In HACS, open the overflow menu (⋮) → **Custom repositories**.
+2. Paste `https://github.com/ltomes/ha-hisense-tv`, pick type **Integration**, click **Add**.
+3. Find **Hisense TV** in the HACS list and click **Download**.
+4. **Restart Home Assistant.**
+5. Go to **Settings → Devices & Services → Add Integration**, search for **Hisense TV**, and set up the integration (see [Configuration](#configuration)).
 
 ### Manual
 
-Copy `custom_components/hisense_tv` to your HA `config/custom_components/` directory and restart.
+Copy `custom_components/hisense_tv` to your HA `config/custom_components/` directory, restart, then add the integration from **Settings → Devices & Services**.
 
 ## Configuration
 
