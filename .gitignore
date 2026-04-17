@@ -1,0 +1,19 @@
+# Claude Code internal notes
+CLAUDE.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# Tooling caches
+.ruff_cache/
+.pytest_cache/
+.mypy_cache/
+
+# Editor / OS
+.DS_Store
+.vscode/
+.idea/

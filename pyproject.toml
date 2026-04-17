@@ -1,0 +1,31 @@
+[project]
+name = "ha-hisense-tv"
+version = "0.1.0"
+description = "Home Assistant custom integration for Hisense Google TV via ADB + AirPlay"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "homeassistant",
+    "adb-shell>=0.4.4",
+    "ha-adb-common",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "pytest-asyncio>=0.23",
+    "ruff>=0.4",
+]
+
+[tool.uv.sources]
+ha-adb-common = { path = "../ha-adb-common", editable = true }
+
+[tool.ruff]
+target-version = "py312"
+line-length = 100
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I", "N", "UP", "B", "A", "SIM"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

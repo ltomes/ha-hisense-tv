@@ -1,0 +1,66 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "Hisense TV",
+        "description": "Set up your Hisense TV or projector.",
+        "data": {
+          "name": "Device Name",
+          "airplay_host": "Device IP Address",
+          "airplay_port": "AirPlay Port",
+          "adb_port": "ADB Port",
+          "device_mode": "Device Mode",
+          "jellyfin_entity": "Jellyfin Media Player",
+          "receiver_entity": "Receiver",
+          "receiver_input": "Receiver Input (eARC)",
+          "power_entity": "Power Switch"
+        },
+        "data_description": {
+          "airplay_host": "IP address of the TV/projector.",
+          "airplay_port": "AirPlay port (default 7000).",
+          "adb_port": "ADB port number (default 5555).",
+          "device_mode": "How this device is used: display only, source via eARC, or both.",
+          "jellyfin_entity": "Jellyfin media_player for this device (when using built-in apps).",
+          "receiver_entity": "The receiver this device is connected to.",
+          "receiver_input": "Which input on the receiver this device uses for eARC.",
+          "power_entity": "Smart plug switch for reliable on/off detection."
+        }
+      },
+      "adb_pair": {
+        "title": "Pair ADB",
+        "description": "On your TV, go to Settings > System > Developer options and enable ADB debugging. Then click Submit. You will see a prompt on the TV to allow the connection -- approve it. If the connection fails, make sure ADB debugging is enabled and the TV is on the same network, then click Submit to try again."
+      }
+    },
+    "error": {
+      "no_host": "Device IP address is required.",
+      "adb_failed": "Could not connect via ADB. Make sure ADB debugging is enabled on the device, the device is powered on, and you approved the connection prompt on the TV. Click Submit to try again."
+    },
+    "abort": {
+      "already_configured": "This device is already configured."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "Hisense TV Settings",
+        "description": "Configure linked devices and mode.",
+        "data": {
+          "device_mode": "Device Mode",
+          "jellyfin_entity": "Jellyfin Media Player",
+          "receiver_entity": "Receiver",
+          "receiver_input": "Receiver Input (eARC)",
+          "power_entity": "Power Switch",
+          "hdmi_inputs": "HDMI Input Mappings"
+        },
+        "data_description": {
+          "device_mode": "How this device is used: display only, source via eARC, or both.",
+          "jellyfin_entity": "Jellyfin media_player for this device (when using built-in apps).",
+          "receiver_entity": "The receiver this device is connected to.",
+          "receiver_input": "Which input on the receiver.",
+          "power_entity": "Smart plug switch for reliable on/off detection.",
+          "hdmi_inputs": "Map HDMI inputs to source device entities."
+        }
+      }
+    }
+  }
+}
