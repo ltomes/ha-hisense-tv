@@ -520,7 +520,8 @@ class HisenseTVMediaPlayer(MediaPlayerEntity):
                       "media_type": attrs.get("media_content_type")}
                 for src, dst in [("media_series_title", "series"), ("media_season", "season"),
                                  ("media_episode", "episode"), ("media_duration", "duration"),
-                                 ("media_position", "position")]:
+                                 ("media_position", "position"),
+                                 ("media_position_updated_at", "position_updated_at")]:
                     v = attrs.get(src)
                     if v is not None:
                         np[dst] = v

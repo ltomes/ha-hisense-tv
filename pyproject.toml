@@ -1,6 +1,6 @@
 [project]
 name = "ha-hisense-tv"
-version = "0.1.0"
+version = "0.1.1"
 description = "Home Assistant custom integration for Hisense Google TV via ADB + AirPlay"
 readme = "README.md"
 requires-python = ">=3.12"
