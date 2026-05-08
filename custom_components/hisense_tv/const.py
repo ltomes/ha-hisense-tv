@@ -22,6 +22,12 @@ CONF_AIRPLAY_PORT = "airplay_port"
 CONF_ADB_PORT = "adb_port"
 CONF_INPUT_ENTITY_MAP = "input_entity_map"  # HDMI input name -> entity_id
 
+# Real-time Android keypress capture via persistent ADB getevent stream.
+# Fires `hisense_tv_key` HA events for downstream automations and any
+# external consumer (e.g. the Thor jmp-input-bridge). Opt-in; default
+# off. See keyevent_stream.py and bare-metal/nodes/thor/INPUT-PLAN.md.
+CONF_ENABLE_KEYEVENT_STREAM = "enable_keyevent_stream"
+
 CONF_ADB_PAIRED = "adb_paired"
 
 DEFAULT_NAME = "Hisense TV"

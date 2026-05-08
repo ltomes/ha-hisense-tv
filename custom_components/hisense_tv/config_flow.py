@@ -18,6 +18,7 @@ from .const import (
     CONF_AIRPLAY_HOST,
     CONF_AIRPLAY_PORT,
     CONF_DEVICE_MODE,
+    CONF_ENABLE_KEYEVENT_STREAM,
     CONF_INPUT_ENTITY_MAP,
     CONF_JELLYFIN_ENTITY,
     CONF_POWER_ENTITY,
@@ -310,6 +311,13 @@ class HisenseTVOptionsFlow(config_entries.OptionsFlow):
         schema_dict[vol.Optional(
             CONF_HDMI_INPUTS, default=current_inputs if current_inputs else []
         )] = hdmi_input_sel
+
+        # Persistent ADB getevent stream (fires hisense_tv_key events).
+        # Off by default; opt-in per device. See keyevent_stream.py.
+        schema_dict[vol.Optional(
+            CONF_ENABLE_KEYEVENT_STREAM,
+            default=self._options.get(CONF_ENABLE_KEYEVENT_STREAM, False),
+        )] = bool
 
         return self.async_show_form(
             step_id="init",
