@@ -34,6 +34,7 @@ from homeassistant.components.media_player import (
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.const import STATE_PLAYING, STATE_PAUSED
 from homeassistant.core import CALLBACK_TYPE, HomeAssistant, callback, Event
+from homeassistant.helpers.dispatcher import async_dispatcher_send
 from homeassistant.helpers.entity import DeviceInfo
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.event import async_call_later, async_track_state_change_event
@@ -204,6 +205,14 @@ class HisenseTVMediaPlayer(MediaPlayerEntity):
             port = self._entry.data.get(CONF_ADB_PORT, DEFAULT_ADB_PORT)
             self._adb = AdbClient(host, port, key_path)
             if await self._adb.connect():
+                # Fire initial reachability signal so subscribers
+                # (keyevent_stream) can wake up immediately rather than
+                # waiting for the next poll's transition detection.
+                async_dispatcher_send(
+                    self.hass,
+                    f"hisense_tv_adb_state:{self._entry.entry_id}",
+                    True,
+                )
                 self._adb_poll_unsub = async_call_later(
                     self.hass, ADB_POLL_INTERVAL, self._adb_poll_callback
                 )
@@ -226,7 +235,19 @@ class HisenseTVMediaPlayer(MediaPlayerEntity):
         try:
             if not self._adb:
                 return
+            was_connected = self._adb.connected
             self._adb_state = await self._adb.poll()
+            now_connected = self._adb.connected
+            if now_connected != was_connected:
+                # Notify the keyevent_stream (and any other listener)
+                # so it can connect / tear down its own ADB session
+                # without running its own retry loop. See
+                # keyevent_stream.set_reachable.
+                async_dispatcher_send(
+                    self.hass,
+                    f"hisense_tv_adb_state:{self._entry.entry_id}",
+                    now_connected,
+                )
             if self._adb_state.awake:
                 self._running_apps = await self._adb.poll_running_apps()
             else:

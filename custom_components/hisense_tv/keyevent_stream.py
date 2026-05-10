@@ -50,13 +50,30 @@ _LOGGER = logging.getLogger(__name__)
 
 EVENT_NAME = "hisense_tv_key"
 
-# Default input device nodes — verified on Hisense L9Q (2026-05-08
-# via `getevent -lp`):
-#   /dev/input/event9  — "SmartRC Consumer Control" (media + nav remote)
-#   /dev/input/event10 — "SmartRC Keypad" (full keyboard table)
+# Default input device filter — verified on Hisense L9Q (2026-05-08
+# via `getevent -lt` enumeration):
+#   /dev/input/event1  — "MTK Smart TV IR Receiver" (physical IR remote)
+#   /dev/input/event5  — "mediatek,cec" (HDMI CEC line on the projector
+#                         side; we can't get CEC at all on Thor's HDMI
+#                         ingress per OPEN-QUESTIONS Q-CEC, so this is
+#                         our only foothold for CEC opcodes from devices
+#                         downstream of the projector)
+#   /dev/input/event9  — "SmartRC Consumer Control" (BT remote: media+nav)
+#   /dev/input/event10 — "SmartRC Keypad" (BT remote: full keyboard table)
+# Excluded: cameras, virtual-search, MTK PMU, front-panel keypad —
+# these surface noise unrelated to remote/CEC input.
 # Other Hisense Google TV devices may number these differently; the
 # device list is overrideable via the KeyEventStreamer constructor.
-DEFAULT_DEVICES = ("/dev/input/event9", "/dev/input/event10")
+#
+# The ADB command runs `getevent -lt` with NO device argument (Android's
+# getevent accepts at most one device path); we filter incoming lines
+# against this set in _dispatch_line.
+DEFAULT_DEVICES = (
+    "/dev/input/event1",
+    "/dev/input/event5",
+    "/dev/input/event9",
+    "/dev/input/event10",
+)
 
 # `getevent -lt` line format (timestamp + key form):
 #   [   13104.094503] /dev/input/event9: EV_KEY       KEY_VOLUMEUP         DOWN
@@ -94,10 +111,18 @@ class KeyEventStreamer:
         self._port = port
         self._key_path = key_path
         self._entry_id = entry_id
-        self._devices = devices
+        self._devices = frozenset(devices)
         self._task: asyncio.Task | None = None
         self._device: Any = None  # AdbDeviceTcpAsync
         self._stop_requested = False
+        # Reachability gate driven by media_player's ADB poll.
+        # Pre-2026-05-10 this class ran its own reconnect loop with
+        # exponential backoff. That stranded silently when the TV was
+        # powered off via KEY_POWER: the TCP connection stayed alive
+        # while getevent died, streaming_shell with read_timeout_s=None
+        # never raised, and the loop never reconnected. Now we wait
+        # on this Event and let media_player drive transitions.
+        self._reachable = asyncio.Event()
 
     async def start(self) -> None:
         """Spawn the background task that maintains the stream."""
@@ -116,6 +141,7 @@ class KeyEventStreamer:
     async def stop(self) -> None:
         """Cancel the stream task and close the ADB connection."""
         self._stop_requested = True
+        self._reachable.set()  # unblock _run if waiting on reachable
         if self._task and not self._task.done():
             self._task.cancel()
             try:
@@ -126,6 +152,36 @@ class KeyEventStreamer:
                 _LOGGER.debug("Hisense keyevent stop saw: %s", err)
         self._task = None
         await self._close_device()
+
+    def set_reachable(self, connected: bool) -> None:
+        """Drive reachability from media_player's ADB poll.
+
+        Called via dispatcher on every adb.connected transition.
+        - connected=True: unblocks _run from waiting on _reachable;
+          the next loop iteration will (re)connect and stream.
+        - connected=False: clears the gate AND tears down any active
+          stream by closing the ADB device. The streaming_shell raises
+          on next read, _run drops back to the wait-on-reachable state,
+          and stays there silently until media_player flips back on.
+        """
+        if connected:
+            if not self._reachable.is_set():
+                _LOGGER.info(
+                    "Hisense keyevent: TV reachable per media_player; arming stream"
+                )
+            self._reachable.set()
+        else:
+            if self._reachable.is_set():
+                _LOGGER.info(
+                    "Hisense keyevent: TV unreachable per media_player; tearing down stream"
+                )
+            self._reachable.clear()
+            # Force the in-flight streaming_shell to raise so _run
+            # drops out of its async-for and back into the
+            # wait-on-reachable branch. Schedule rather than await to
+            # avoid blocking the dispatcher caller.
+            if self._device is not None:
+                self._hass.async_create_task(self._close_device())
 
     # -- internals --
 
@@ -162,30 +218,69 @@ class KeyEventStreamer:
             return False
 
     async def _run(self) -> None:
-        """Connect → stream → reconnect-on-failure forever (until stop)."""
-        backoff = _BACKOFF_INITIAL
-        while not self._stop_requested:
-            if not await self._connect():
-                await asyncio.sleep(backoff)
-                backoff = min(backoff * _BACKOFF_GROWTH, _BACKOFF_MAX)
-                continue
-            backoff = _BACKOFF_INITIAL  # success — reset
+        """Reachable-gated stream loop.
 
-            cmd = "getevent -lt " + " ".join(self._devices)
+        Two states with explicit transitions:
+          IDLE:    waiting on self._reachable (TV unreachable per
+                   media_player). Silent. No probes, no log spam, no
+                   ADB attempts. Transitions to ACTIVE when media_player
+                   dispatches connected=True.
+          ACTIVE:  TV reachable. Connect, stream, dispatch events.
+                   On any read error (incl. read_timeout=30s catching
+                   getevent-died-but-TCP-alive), drop back to top of
+                   loop and reassess: if still reachable per
+                   media_player, immediate reconnect (cheap on a
+                   working TV); if no longer reachable, fall back to
+                   IDLE wait.
+        """
+        while not self._stop_requested:
+            if not self._reachable.is_set():
+                # Quiet wait. media_player will flip this when its
+                # 10s/300s ADB poll succeeds.
+                await self._reachable.wait()
+                if self._stop_requested:
+                    break
+
+            # ACTIVE — TV is reachable. Try to connect.
+            if not await self._connect():
+                # Reachable says yes but our connect failed — likely a
+                # transient race during media_player's first successful
+                # poll. Give it 5s and retry. If TV truly unreachable,
+                # media_player's next poll will flip us back to IDLE.
+                _LOGGER.debug(
+                    "Hisense keyevent: connect failed despite reachable; retrying in 5s"
+                )
+                try:
+                    await asyncio.wait_for(asyncio.sleep(5), timeout=5)
+                except asyncio.TimeoutError:
+                    pass
+                continue
+
+            cmd = "getevent -lt"
             try:
-                # read_timeout_s=None: idle periods between key presses are
-                # the normal case (TV remote held still). We want the read
-                # to wait indefinitely for the next event rather than the
-                # default 10s timeout.
-                async for raw in self._device.streaming_shell(cmd, read_timeout_s=None):
+                # read_timeout_s=30: catches the case where the TCP
+                # connection stays alive but getevent died (TV
+                # power-off without dropping ADB). 30s is short enough
+                # that we recover quickly when this happens, but long
+                # enough that legitimate idle (remote held still)
+                # doesn't trigger constant reconnects on a working TV.
+                # If reachable=True still: reconnect is cheap (~1s) so
+                # the user-visible cost of a false reconnect is near
+                # zero.
+                async for raw in self._device.streaming_shell(cmd, read_timeout_s=30.0):
                     if self._stop_requested:
                         break
                     self._dispatch_chunk(raw)
             except asyncio.CancelledError:
                 raise
             except Exception as err:  # noqa: BLE001
-                _LOGGER.warning(
-                    "Hisense keyevent stream lost (%s); reconnecting", err
+                # Don't WARN-log routine reconnects (TV idle for 30s
+                # while reachable). Logging at DEBUG keeps noise down;
+                # if the user is debugging they can enable DEBUG for
+                # this module.
+                _LOGGER.debug(
+                    "Hisense keyevent stream interrupted (%s); reassessing reachability",
+                    err,
                 )
             finally:
                 await self._close_device()
@@ -201,6 +296,8 @@ class KeyEventStreamer:
         if not m:
             return
         device, key, action_raw = m.group(1), m.group(2), m.group(3)
+        if device not in self._devices:
+            return
         action = _TEXT_ACTIONS.get(action_raw)
         if action is None:
             # Numeric — typically autorepeat (2). 0 = up, 1 = down, anything

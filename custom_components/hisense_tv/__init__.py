@@ -54,11 +54,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # Optional: persistent ADB getevent stream firing `hisense_tv_key`
     # events. Reuses the same host/port/key as the media_player polling
     # client but runs on its own dedicated TCP connection.
+    #
+    # Reachability is driven by media_player via the
+    # `hisense_tv_adb_state:<entry_id>` dispatcher signal. media_player
+    # fires the signal on every adb.connected transition; the streamer
+    # gates its connect/stream/teardown on that signal. See
+    # keyevent_stream.KeyEventStreamer.set_reachable for rationale.
     if entry.options.get(CONF_ENABLE_KEYEVENT_STREAM, False):
         host = entry.data.get(CONF_AIRPLAY_HOST)
         port = entry.data.get(CONF_ADB_PORT, DEFAULT_ADB_PORT)
         if host:
             try:
+                from homeassistant.helpers.dispatcher import async_dispatcher_connect
+
                 key_path = ensure_adb_key(hass.config.path())
                 streamer = KeyEventStreamer(
                     hass=hass,
@@ -67,8 +75,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                     key_path=key_path,
                     entry_id=entry.entry_id,
                 )
+                signal = f"hisense_tv_adb_state:{entry.entry_id}"
+                unsub_dispatcher = async_dispatcher_connect(
+                    hass, signal, streamer.set_reachable
+                )
                 await streamer.start()
                 hass.data[DOMAIN][entry.entry_id]["keyevent_streamer"] = streamer
+                entry.async_on_unload(unsub_dispatcher)
                 entry.async_on_unload(
                     lambda: hass.async_create_task(streamer.stop())
                 )
