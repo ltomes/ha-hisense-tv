@@ -48,9 +48,6 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
         "airplay_info": airplay_info,
     }
 
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
-    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
-
     # Optional: persistent ADB getevent stream firing `hisense_tv_key`
     # events. Reuses the same host/port/key as the media_player polling
     # client but runs on its own dedicated TCP connection.
@@ -60,6 +57,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
     # fires the signal on every adb.connected transition; the streamer
     # gates its connect/stream/teardown on that signal. See
     # keyevent_stream.KeyEventStreamer.set_reachable for rationale.
+    #
+    # CRITICAL ORDERING: this dispatcher_connect must happen BEFORE
+    # async_forward_entry_setups, otherwise the media_player platform's
+    # async_added_to_hass / _setup_adb completes inside the
+    # forward_entry_setups await and fires the initial reachability
+    # signal before the streamer subscriber is registered. The signal
+    # is then lost (no listeners) and the streamer never wakes up.
     if entry.options.get(CONF_ENABLE_KEYEVENT_STREAM, False):
         host = entry.data.get(CONF_AIRPLAY_HOST)
         port = entry.data.get(CONF_ADB_PORT, DEFAULT_ADB_PORT)
@@ -89,6 +93,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
                 _LOGGER.warning(
                     "Hisense keyevent stream failed to start: %s", err
                 )
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+    entry.async_on_unload(entry.add_update_listener(_async_update_listener))
 
     return True
 
