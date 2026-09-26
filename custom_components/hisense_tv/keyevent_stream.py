@@ -68,6 +68,24 @@ EVENT_NAME = "hisense_tv_key"
 # The ADB command runs `getevent -lt` with NO device argument (Android's
 # getevent accepts at most one device path); we filter incoming lines
 # against this set in _dispatch_line.
+#
+# The event numbers are NOT stable: on 2026-09-26 the L9Q had renumbered
+# them (SmartRC Consumer Control -> event2, SmartRC Keypad -> event3,
+# event9 = NVIDIA SHIELD Remote, event10 = DLPC7540 Keyboard), so the
+# path list silently dropped every BT-remote press. On each connect we now
+# resolve paths from these device NAMES via `getevent -lp`; DEFAULT_DEVICES
+# is only the fallback when no name matches.
+DEFAULT_DEVICE_NAMES = frozenset(
+    {
+        "MTK Smart TV IR Receiver",
+        "mediatek,cec",
+        "SmartRC Consumer Control",
+        "SmartRC Keypad",
+    }
+)
+_ADD_DEVICE_RE = re.compile(r"^add device \d+:\s*(\S+)")
+_NAME_RE = re.compile(r'^\s*name:\s*"(.*)"')
+
 DEFAULT_DEVICES = (
     "/dev/input/event1",
     "/dev/input/event5",
@@ -112,6 +130,9 @@ class KeyEventStreamer:
         self._key_path = key_path
         self._entry_id = entry_id
         self._devices = frozenset(devices)
+        # Resolve by name on every connect unless the caller pinned paths.
+        self._resolve_by_name = devices == DEFAULT_DEVICES
+        self._warned_no_match = False
         self._task: asyncio.Task | None = None
         self._device: Any = None  # AdbDeviceTcpAsync
         self._stop_requested = False
@@ -211,11 +232,44 @@ class KeyEventStreamer:
                 self._host,
                 self._port,
             )
+            if self._resolve_by_name:
+                await self._resolve_devices()
             return True
         except Exception as err:  # noqa: BLE001
             _LOGGER.debug("Hisense keyevent stream connect failed: %s", err)
             await self._close_device()
             return False
+
+    async def _resolve_devices(self) -> None:
+        """Map DEFAULT_DEVICE_NAMES to current /dev/input paths."""
+        try:
+            listing = await self._device.shell("getevent -lp", timeout_s=15)
+        except Exception as err:  # noqa: BLE001
+            _LOGGER.debug("Hisense keyevent device lookup failed: %s", err)
+            return
+        found: set[str] = set()
+        path: str | None = None
+        for line in (listing or "").splitlines():
+            if m := _ADD_DEVICE_RE.match(line):
+                path = m.group(1)
+            elif (m := _NAME_RE.match(line)) and path:
+                if m.group(1) in DEFAULT_DEVICE_NAMES:
+                    found.add(path)
+                path = None
+        if not found:
+            if not self._warned_no_match:
+                self._warned_no_match = True
+                _LOGGER.warning(
+                    "Hisense keyevent: no input device matched %s; keeping %s",
+                    sorted(DEFAULT_DEVICE_NAMES),
+                    sorted(self._devices),
+                )
+            return
+        if found != self._devices:
+            _LOGGER.info(
+                "Hisense keyevent: input devices resolved by name: %s", sorted(found)
+            )
+        self._devices = frozenset(found)
 
     async def _run(self) -> None:
         """Reachable-gated stream loop.
