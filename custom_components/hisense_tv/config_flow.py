@@ -19,6 +19,7 @@ from .const import (
     CONF_AIRPLAY_PORT,
     CONF_DEVICE_MODE,
     CONF_ENABLE_KEYEVENT_STREAM,
+    CONF_ENABLE_SOURCE_STREAM,
     CONF_INPUT_ENTITY_MAP,
     CONF_JELLYFIN_ENTITY,
     CONF_POWER_ENTITY,
@@ -317,6 +318,16 @@ class HisenseTVOptionsFlow(config_entries.OptionsFlow):
         schema_dict[vol.Optional(
             CONF_ENABLE_KEYEVENT_STREAM,
             default=self._options.get(CONF_ENABLE_KEYEVENT_STREAM, False),
+        )] = bool
+
+        # Persistent ADB logcat stream watching the projector's
+        # AirPlaySystemService_BootupService tag for ActiveIdentifier
+        # transitions. Fires `hisense_tv_source_changed` events on
+        # every projector input switch. Off by default. See
+        # source_event_stream.py.
+        schema_dict[vol.Optional(
+            CONF_ENABLE_SOURCE_STREAM,
+            default=self._options.get(CONF_ENABLE_SOURCE_STREAM, False),
         )] = bool
 
         return self.async_show_form(

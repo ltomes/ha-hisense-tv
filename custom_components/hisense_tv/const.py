@@ -28,6 +28,13 @@ CONF_INPUT_ENTITY_MAP = "input_entity_map"  # HDMI input name -> entity_id
 # off. See keyevent_stream.py and bare-metal/nodes/thor/INPUT-PLAN.md.
 CONF_ENABLE_KEYEVENT_STREAM = "enable_keyevent_stream"
 
+# Real-time projector input-source change capture via persistent ADB
+# logcat stream on tag `AirPlaySystemService_BootupService`. Fires
+# `hisense_tv_source_changed` HA events on every ActiveIdentifier
+# transition. Opt-in; default off. See source_event_stream.py and
+# bare-metal/containers/jmp-input-bridge/src/hdmi_gate.py.
+CONF_ENABLE_SOURCE_STREAM = "enable_source_stream"
+
 CONF_ADB_PAIRED = "adb_paired"
 
 DEFAULT_NAME = "Hisense TV"
