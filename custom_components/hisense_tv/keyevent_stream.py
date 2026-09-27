@@ -71,21 +71,14 @@ EVENT_NAME = "hisense_tv_key"
 #
 # The event numbers are NOT stable: on 2026-09-26 the L9Q had renumbered
 # them (SmartRC Consumer Control -> event2, SmartRC Keypad -> event3,
-# event9 = NVIDIA SHIELD Remote, event10 = DLPC7540 Keyboard), so the
-# path list silently dropped every BT-remote press. On each connect we now
-# resolve paths from these device NAMES via `getevent -lp`; DEFAULT_DEVICES
-# is only the fallback when no name matches.
-DEFAULT_DEVICE_NAMES = frozenset(
-    {
-        "MTK Smart TV IR Receiver",
-        "mediatek,cec",
-        "SmartRC Consumer Control",
-        "SmartRC Keypad",
-        # A SHIELD remote paired to the projector registers here too; its
-        # volume keys arrive on its own device, not the SmartRC ones.
-        "NVIDIA SHIELD Remote",
-    }
-)
+# event9/event12 = NVIDIA SHIELD Remote, event10 = DLPC7540 Keyboard), so
+# the path list silently dropped remote presses. Every remote that can
+# pair with the projector (its own SmartRC remote, a SHIELD remote, IR,
+# CEC, the front keypad, future ones) must be heard, so on each connect we
+# stream EVERY input device except known non-remote noise sources, resolved
+# by name via `getevent -lp`. DEFAULT_DEVICES is only the fallback when the
+# listing can't be read.
+NOISE_DEVICE_RE = re.compile(r"camera|virtual-search|PMU WOBT", re.IGNORECASE)
 _ADD_DEVICE_RE = re.compile(r"^add device \d+:\s*(\S+)")
 _NAME_RE = re.compile(r'^\s*name:\s*"(.*)"')
 
@@ -244,7 +237,7 @@ class KeyEventStreamer:
             return False
 
     async def _resolve_devices(self) -> None:
-        """Map DEFAULT_DEVICE_NAMES to current /dev/input paths."""
+        """Select every current /dev/input device except known noise sources."""
         try:
             listing = await self._device.shell("getevent -lp", timeout_s=15)
         except Exception as err:  # noqa: BLE001
@@ -256,15 +249,14 @@ class KeyEventStreamer:
             if m := _ADD_DEVICE_RE.match(line):
                 path = m.group(1)
             elif (m := _NAME_RE.match(line)) and path:
-                if m.group(1) in DEFAULT_DEVICE_NAMES:
+                if not NOISE_DEVICE_RE.search(m.group(1)):
                     found.add(path)
                 path = None
         if not found:
             if not self._warned_no_match:
                 self._warned_no_match = True
                 _LOGGER.warning(
-                    "Hisense keyevent: no input device matched %s; keeping %s",
-                    sorted(DEFAULT_DEVICE_NAMES),
+                    "Hisense keyevent: no input devices listed; keeping %s",
                     sorted(self._devices),
                 )
             return
