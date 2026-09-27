@@ -81,6 +81,9 @@ DEFAULT_DEVICE_NAMES = frozenset(
         "mediatek,cec",
         "SmartRC Consumer Control",
         "SmartRC Keypad",
+        # A SHIELD remote paired to the projector registers here too; its
+        # volume keys arrive on its own device, not the SmartRC ones.
+        "NVIDIA SHIELD Remote",
     }
 )
 _ADD_DEVICE_RE = re.compile(r"^add device \d+:\s*(\S+)")
